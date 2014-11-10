@@ -60,9 +60,6 @@ int main(int argc, char *argv[])
 		goto error;
 	}
 
-	/*fcntlFlag = fcntl(servSock, F_GETFL, 0);*/
-	/*fcntl(servSock, F_SETFL, fcntlFlag | O_NONBLOCK);*/
-
 	epollFd = epoll_create(EPOLL_SIZE);
 	eventList = malloc(sizeof(struct epoll_event) * EPOLL_SIZE);
 	eventInfo.events = EPOLLIN;
@@ -108,7 +105,7 @@ int main(int argc, char *argv[])
 			}
 			while(1)
 			{
-				rcvedLen = recv(eventList[i].data.fd, readBuf, BUF_SIZE, 0);
+				rcvedLen = recv(eventList[i].data.fd, readBuf, BUF_SIZE - 1, 0);
 				if(rcvedLen == 0)
 				{
 					eventInfo.events = EPOLLIN | EPOLLET;
@@ -136,6 +133,7 @@ int main(int argc, char *argv[])
 				}
 				for(int j = 0; j < connectedCnt; j++)
 				{
+					readBuf[rcvedLen] = '\0';
 					memset(sendBuf, 0, BUF_SIZE + 10);
 					sprintf(clntNum, "%d said>> ", eventList[i].data.fd);
 					strcpy(sendBuf, clntNum);
