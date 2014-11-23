@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <pthread.h>
 #include <locale.h>
+#include <ctype.h>
 
 #define BUF_SIZE 255
 #define CLEAR_SCREEN_ANSI "\e[1;1H\e[2J"
@@ -40,17 +41,37 @@ void clearChatWin(WINDOW *chatWin)
 
 int main(int argc, char *argv[])
 {
+	int clntSock;
+	int port;
+	struct sockaddr_in servAddr;
+	struct sockaddr_in verify;
+	pthread_t sndThread, rcvThread;
+	int ret = -1;
+	argForT_t *args = (argForT_t *)malloc(sizeof(argForT_t));
+
 	if(argc != 3)
 	{
 		printf("Please enter IP & port.\n");
 		exit(1);
 	}
-	int clntSock;
-	struct sockaddr_in servAddr;
-	pthread_t sndThread, rcvThread;
-	void *retFromThread;
-	int ret = -1;
-	argForT_t *args = (argForT_t *)malloc(sizeof(argForT_t));
+	if(inet_pton(AF_INET, argv[1], &(verify.sin_addr)) == 0)
+	{
+		printf("Please enter correct IP addr.\n");
+		exit(1);
+	}
+	for(int i = 0; i < strlen(argv[2]); i++)
+	{
+		if(!isdigit(argv[2][i]))
+		{
+			printf("Please enter correct Port number.\n");
+			exit(1);
+		}
+	}
+	if(port = atoi(argv[2]) > 65535)
+	{
+		printf("Please enter correct Port number.\n");
+		exit(1);
+	}
 
 	setlocale(LC_ALL, "ko_KR.utf8");
 	setlocale(LC_CTYPE, "ko_KR.utf8");
@@ -88,8 +109,9 @@ int main(int argc, char *argv[])
 	args->clntSock = clntSock;
 	pthread_create(&sndThread, NULL, sndMsg, (void *)args);
 	pthread_create(&rcvThread, NULL, rcvMsg, (void *)args);
-	pthread_join(sndThread, &retFromThread);
-	pthread_join(rcvThread, &retFromThread);
+	pthread_join(sndThread, NULL);
+	pthread_join(rcvThread, NULL);
+	printf("thread exit\n");
 	ret = 0;
 
 error:
@@ -100,17 +122,14 @@ error:
 
 void *sndMsg(void *arg)
 {
-	int *ret = (int *)malloc(sizeof(int));
-	*ret = -1;
 	argForT_t *args = (argForT_t *)arg;
-	int clntSock = args->clntSock;
 	int sndLen;
+	int clntSock = args->clntSock;
 	WINDOW *chatWin = args->cWin;
 	char sndBuf[BUF_SIZE];
-	memset(sndBuf, 0, BUF_SIZE);
 	while(1)
 	{
-		getnstr(sndBuf, BUF_SIZE);
+		getnstr(sndBuf, BUF_SIZE - 2);
 		sndLen = strlen(sndBuf);
 		sndBuf[sndLen] = '\n';
 		sndBuf[sndLen + 1] = '\0';
@@ -118,35 +137,30 @@ void *sndMsg(void *arg)
 		clearWin();
 		refresh();
 
-		if(!strcmp(sndBuf, ":q\n") || !strcmp(sndBuf, "Q\n"))
+		if(!strcmp(sndBuf, ":q\n") || !strcmp(sndBuf, ":Q\n"))
 		{
-			*ret = 0;
 			goto exitThread;
 		}
-		if(send(clntSock, sndBuf, BUF_SIZE, 0) == -1)
+		if(send(clntSock, sndBuf, strlen(sndBuf) + 1, 0) == -1)
 		{
 			perror("send");
-			*ret = -1;
 			goto exitThread;
 		}
 	}
 exitThread:
-	close(clntSock);
 	endwin();
-	exit(*ret);
-	return ret;
+	/*by using 'exit()' terminate all threads*/
+	exit(0);
 }
 
 void *rcvMsg(void *arg)
 {
-	int *ret = (int *)malloc(sizeof(int));
-	*ret = -1;
 	argForT_t *args = (argForT_t *)arg;
-	int clntSock = args->clntSock;
-	WINDOW *chatWin = args->cWin;
 	int rcvedLen;
 	int row = 1;
 	int lines = 1;
+	int clntSock = args->clntSock;
+	WINDOW *chatWin = args->cWin;
 	char rcvBuf[BUF_SIZE];
 	char backBuf[BUF_SIZE];
 	mvwprintw(chatWin, 2, 0, "");
@@ -155,13 +169,19 @@ void *rcvMsg(void *arg)
 		rcvedLen = recv(clntSock, rcvBuf, BUF_SIZE - 1, 0);
 		if(rcvedLen == -1)
 		{
-			perror("recv2");
-			*ret = -1;
+			perror("recv");
 			goto exitThread;
 		}
+		if(rcvedLen == 0)
+		{
+			wprintw(chatWin, "Disconnected by the server.\n");
+			wrefresh(chatWin);
+			refresh();
+			goto exitThread;
+		}
+			
 		if(rcvedLen > 0 && strlen(rcvBuf) > 0)
 		{
-			rcvBuf[rcvedLen] = '\0';
 			if(lines > LINES - 10)
 			{
 				lines = 1;
@@ -175,8 +195,7 @@ void *rcvMsg(void *arg)
 		}
 	}
 exitThread:
-	close(clntSock);
 	endwin();
-	exit(*ret);
-	return ret;
+	/*by using 'exit()' terminate all threads*/
+	exit(0);
 }
